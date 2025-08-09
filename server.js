@@ -128,6 +128,18 @@ app.get('/api/token/refresh', async (req, res) => {
     res.status(500).json({ error: 'refresh_failed' });
   }
 });
+// === Diagnóstico: quem sou eu com este token? ===
+app.get('/api/whoami', async (req, res) => {
+  try {
+    const r = await fetch('https://api.mercadolibre.com/users/me', {
+      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` }
+    });
+    const text = await r.text();
+    res.status(r.status).type('application/json').send(text);
+  } catch (e) {
+    res.status(500).json({ error: 'whoami_failed', detail: String(e) });
+  }
+});
 
 // ---------------------------
 app.listen(PORT, () => {
