@@ -1,46 +1,24 @@
-// server.js
-import express from "express";
-import fetch from "node-fetch";
-import cors from "cors";
+
+import express from 'express';
+import cors from 'cors';
+import fetch from 'node-fetch';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
 app.use(cors());
 
-const CLIENT_ID = "6265601993393948";
-const CLIENT_SECRET = "7wThS4Tq1bdJ5e1BJcygzhEG8VW2xFLI";
-const REFRESH_TOKEN = "COLOQUE_AQUI_SEU_REFRESH_TOKEN";
+app.get('/', (req, res) => {
+  res.send('Servidor proxy do Mercado Livre funcionando!');
+});
 
-// Função para obter token de acesso
-async function getAccessToken() {
-  const resp = await fetch("https://api.mercadolibre.com/oauth/token", {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({
-      grant_type: "refresh_token",
-      client_id: CLIENT_ID,
-      client_secret: CLIENT_SECRET,
-      refresh_token: REFRESH_TOKEN,
-    }),
-  });
-  return resp.json();
-}
-
-// Endpoint para buscar produtos
-app.get("/produtos", async (req, res) => {
+app.get('/api', async (req, res) => {
   try {
-    const tokenData = await getAccessToken();
-    const token = tokenData.access_token;
-
-    const mlResp = await fetch(
-      "https://api.mercadolibre.com/sites/MLB/search?q=eletronicos&limit=10",
-      { headers: { Authorization: `Bearer ${token}` } }
-    );
-    const data = await mlResp.json();
+    const response = await fetch('https://api.mercadolibre.com/sites/MLB/search?q=celular');
+    const data = await response.json();
     res.json(data);
   } catch (error) {
-    res.status(500).json({ error: "Erro ao buscar produtos", details: error });
+    res.status(500).json({ error: 'Erro ao buscar dados do Mercado Livre' });
   }
 });
 
