@@ -104,6 +104,30 @@ app.get('/api/search', async (req, res) => {
     return res.status(500).json({ error: 'Falha na busca de produtos' });
   }
 });
+// === Rota para renovar o token do Mercado Livre ===
+app.get('/api/token/refresh', async (req, res) => {
+  try {
+    const body = new URLSearchParams({
+      grant_type: 'refresh_token',
+      client_id: process.env.ML_CLIENT_ID,
+      client_secret: process.env.ML_CLIENT_SECRET,
+      refresh_token: process.env.ML_REFRESH_TOKEN
+    });
+
+    const r = await fetch('https://api.mercadolibre.com/oauth/token', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+      body
+    });
+
+    const data = await r.json();
+    // Se der certo, vem access_token; se der erro, volta o erro do ML
+    res.status(r.ok ? 200 : 400).json(data);
+  } catch (err) {
+    console.error('Erro ao renovar token:', err);
+    res.status(500).json({ error: 'refresh_failed' });
+  }
+});
 
 // ---------------------------
 app.listen(PORT, () => {
