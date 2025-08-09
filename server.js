@@ -1,5 +1,14 @@
+import express from 'express';
+import cors from 'cors';
+import fetch from 'node-fetch';
+
+const app = express();
+const PORT = process.env.PORT || 10000;
+
+app.use(cors());
+
 // ROTA: busca produtos no Mercado Livre via proxy
-// Ex.: /api/search?q=fone&limit=12  ou  /api/search?category=MLB1000&sort=sold_quantity_desc
+// Ex.: /api/search?q=fone&limit=12 ou /api/search?category=MLB1000&sort=sold_quantity_desc
 app.get('/api/search', async (req, res) => {
   try {
     const { q, category, limit = '20', sort = 'sold_quantity_desc' } = req.query;
@@ -19,4 +28,8 @@ app.get('/api/search', async (req, res) => {
     console.error('Erro /api/search:', err);
     res.status(500).json({ error: 'Falha ao buscar produtos' });
   }
+});
+
+app.listen(PORT, () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });
