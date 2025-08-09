@@ -1,147 +1,107 @@
 // server.js
-import express from 'express';
-import cors from 'cors';
-import fetch from 'node-fetch';
+import express from "express";
+import cors from "cors";
+import fetch from "node-fetch";
 
 const app = express();
 const PORT = process.env.PORT || 10000;
 
 app.use(cors());
+app.use(express.json());
 
-// ---------------------------
-// Gestão de tokens (em memória)
-// ---------------------------
-let ACCESS_TOKEN = process.env.ML_ACCESS_TOKEN || '';
-let REFRESH_TOKEN = process.env.ML_REFRESH_TOKEN || '';
+// Variáveis de ambiente (Render -> Environment)
+const ML_ACCESS_TOKEN  = process.env.ML_ACCESS_TOKEN || "";
+const ML_REFRESH_TOKEN = process.env.ML_REFRESH_TOKEN || "";
+const ML_CLIENT_ID     = process.env.ML_CLIENT_ID || "";
+const ML_CLIENT_SECRET = process.env.ML_CLIENT_SECRET || "";
 
-async function refreshAccessToken() {
-  const url = 'https://api.mercadolibre.com/oauth/token';
-  const body = new URLSearchParams({
-    grant_type: 'refresh_token',
-    client_id: process.env.ML_CLIENT_ID,
-    client_secret: process.env.ML_CLIENT_SECRET,
-    refresh_token: REFRESH_TOKEN,
-  });
-
-  const resp = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-    body,
-  });
-
-  const data = await resp.json();
-  if (!resp.ok) {
-    console.error('Falha ao renovar token:', data);
-    throw new Error('Não foi possível renovar o access_token');
-  }
-
-  ACCESS_TOKEN = data.access_token;
-  if (data.refresh_token) {
-    // O Mercado Livre pode rotacionar o refresh_token
-    REFRESH_TOKEN = data.refresh_token;
-  }
-  console.log('✅ Novo access_token obtido com sucesso.');
-}
-
-// ---------------------------
-// Rota de teste
-// ---------------------------
-app.get('/', (_, res) => {
-  res.send('Servidor proxy do Mercado Livre funcionando!');
+/**
+ * Raiz — só pra ver se o proxy está vivo
+ */
+app.get("/", (_req, res) => {
+  res.send("Servidor proxy do Mercado Livre funcionando!");
 });
 
-// ---------------------------
 /**
- * Rota de busca:
- * Ex.: /api/search?q=celular&limit=5
- * Ex.: /api/search?category=MLB1000&sort=sold_quantity_desc&limit=10
+ * Quem sou eu? (usa token) — teste rápido do token atual
+ * GET /api/whoami
  */
-app.get('/api/search', async (req, res) => {
+app.get("/api/whoami", async (_req, res) => {
   try {
-    // Parâmetros de busca
-    const { q, category, limit = '20', sort = 'sold_quantity_desc' } = req.query;
+    const r = await fetch("https://api.mercadolibre.com/users/me", {
+      headers: { Authorization: `Bearer ${ML_ACCESS_TOKEN}` },
+    });
+    const data = await r.json();
+    return res.status(r.status).json(data);
+  } catch (err) {
+    console.error("Erro /api/whoami:", err);
+    return res.status(500).json({ error: "Falha ao consultar /users/me" });
+  }
+});
+
+/**
+ * BUSCA de produtos (SEM Authorization) — evita 403
+ * GET /api/search?q=iphone&limit=10&sort=sold_quantity_desc&category=MLB1000
+ * - q (texto), category (MLB...), sort (padrão sold_quantity_desc), limit
+ */
+app.get("/api/search", async (req, res) => {
+  try {
+    const { q, category, sort = "sold_quantity_desc", limit = "20" } = req.query;
+
     const params = new URLSearchParams();
-    if (q) params.set('q', q);
-    if (category) params.set('category', category);
-    params.set('limit', String(limit));
-    params.set('sort', String(sort));
+    if (q) params.set("q", String(q));
+    if (category) params.set("category", String(category));
+    params.set("sort", String(sort));
+    params.set("limit", String(limit));
 
     const url = `https://api.mercadolibre.com/sites/MLB/search?${params.toString()}`;
 
-    // Função que faz a chamada à API do ML com o token atual
-    const doFetch = () =>
-      fetch(url, {
-        headers: { Authorization: `Bearer ${ACCESS_TOKEN}` },
-      });
+    // Importante: SEM Authorization aqui
+    const r = await fetch(url);
+    const data = await r.json();
 
-    // 1ª tentativa
-    let resp = await doFetch();
-
-    // Se deu não-autorizado/invalid token, tenta renovar e refazer uma vez
-    if (resp.status === 401 || resp.status === 400) {
-      const maybeError = await resp.json().catch(() => ({}));
-      const msg = JSON.stringify(maybeError);
-      if (msg.includes('invalid') || msg.includes('token')) {
-        console.log('⚠️ Token inválido/expirado. Renovando e tentando novamente...');
-        await refreshAccessToken();
-        resp = await doFetch();
-      } else {
-        // Outro erro 400/401
-        return res.status(resp.status).json(maybeError);
-      }
-    }
-
-    if (!resp.ok) {
-      const errText = await resp.text();
-      console.error('Erro na API do ML:', resp.status, errText);
-      return res.status(resp.status).send(errText);
-    }
-
-    const data = await resp.json();
-    return res.json(data);
+    // Repassa o status exato que a API retornar
+    return res.status(r.status).json(data);
   } catch (err) {
-    console.error('Erro em /api/search:', err);
-    return res.status(500).json({ error: 'Falha na busca de produtos' });
+    console.error("Erro /api/search:", err);
+    return res.status(500).json({ error: "Falha ao buscar produtos" });
   }
 });
-// === Rota para renovar o token do Mercado Livre ===
-app.get('/api/token/refresh', async (req, res) => {
+
+/**
+ * Renovar token com refresh_token
+ * GET /api/token/refresh
+ */
+app.get("/api/token/refresh", async (_req, res) => {
   try {
     const body = new URLSearchParams({
-      grant_type: 'refresh_token',
-      client_id: process.env.ML_CLIENT_ID,
-      client_secret: process.env.ML_CLIENT_SECRET,
-      refresh_token: process.env.ML_REFRESH_TOKEN
+      grant_type: "refresh_token",
+      client_id: ML_CLIENT_ID,
+      client_secret: ML_CLIENT_SECRET,
+      refresh_token: ML_REFRESH_TOKEN,
     });
 
-    const r = await fetch('https://api.mercadolibre.com/oauth/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body
+    const r = await fetch("https://api.mercadolibre.com/oauth/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body,
     });
 
     const data = await r.json();
-    // Se der certo, vem access_token; se der erro, volta o erro do ML
-    res.status(r.ok ? 200 : 400).json(data);
+    return res.status(r.status).json(data);
   } catch (err) {
-    console.error('Erro ao renovar token:', err);
-    res.status(500).json({ error: 'refresh_failed' });
-  }
-});
-// === Diagnóstico: quem sou eu com este token? ===
-app.get('/api/whoami', async (req, res) => {
-  try {
-    const r = await fetch('https://api.mercadolibre.com/users/me', {
-      headers: { Authorization: `Bearer ${ACCESS_TOKEN}` }
-    });
-    const text = await r.text();
-    res.status(r.status).type('application/json').send(text);
-  } catch (e) {
-    res.status(500).json({ error: 'whoami_failed', detail: String(e) });
+    console.error("Erro /api/token/refresh:", err);
+    return res.status(500).json({ error: "Falha ao renovar token" });
   }
 });
 
-// ---------------------------
+/**
+ * Healthcheck simples
+ */
+app.get("/api/health", (_req, res) => {
+  res.json({ ok: true, time: new Date().toISOString() });
+});
+
 app.listen(PORT, () => {
   console.log(`Servidor rodando na porta ${PORT} 🚀`);
 });
